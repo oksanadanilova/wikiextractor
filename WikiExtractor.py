@@ -439,7 +439,7 @@ class Extractor(object):
         """
         :param out: a memory file.
         """
-        if ':' not in self.title:
+        if u'Википедия:' not in self.title and u'Арбитраж:' in self.title and u'Обсуждение:' in self.title:
             logging.debug("%s\t%s", self.id, self.title)
             url = get_url(self.id)
             header = '' # '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
