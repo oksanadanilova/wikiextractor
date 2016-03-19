@@ -453,12 +453,12 @@ class Extractor(object):
         self.magicWords['currenthour'] = time.strftime('%H')
         self.magicWords['currenttime'] = time.strftime('%H:%M:%S')
         text = self.clean()
-        #footer = "\n</doc>\n"
-        #out.write(header)
+        footer = "\n</doc>\n"
+        out.write(header)
         for line in compact(text):
             out.write(line.encode('utf-8'))
             out.write('\n')
-        #out.write(footer)
+        out.write(footer)
         errs = (self.template_title_errs,
                 self.recursion_exceeded_1_errs,
                 self.recursion_exceeded_2_errs,
@@ -474,10 +474,6 @@ class Extractor(object):
         """
         text = self.text
         self.text = ''          # save memory
-        text = text.replace(u'{{переписать раздел}}', u'%%%переписать раздел%%%')
-        text = re.sub(u'{{К улучшению.*}}', u'%%%К улучшению%%%', text)
-        text = re.sub(u'{{К удалению.*}}', u'%%%К удалению%%%', text)
-        text = re.sub(u'{{чистить.*}}', u'%%%чистить%%%', text)
         if Extractor.expand_templates:
             # expand templates
             # See: http://www.mediawiki.org/wiki/Help:Templates
@@ -497,7 +493,6 @@ class Extractor(object):
 
         # drop MagicWords behavioral switches
         text = magicWordsRE.sub('', text)
-
 
         # ############### Process HTML ###############
 
@@ -572,14 +567,9 @@ class Extractor(object):
         text = re.sub(u' (,:\.\)\]»)', r'\1', text)
         text = re.sub(u'(\[\(«) ', r'\1', text)
         text = re.sub(r'\n\W+?\n', '\n', text, flags=re.U)  # lines with only punctuations
-
-################################ Oksana's corrects ##################################################
-        # drop ()  +
-        text = re.sub('(\s)\([^\(\)]*\)', '', text)
-        # drop lalala:\n
-        text = re.sub(ur'\.?[^\.]*:(\r|$)', '.', text)
-
         text = text.replace(',,', ',').replace(',.', '.')
+        text = re.sub('(\s)\([^\(\)]*\)', '', text)
+
         if escape_doc:
             text = cgi.escape(text)
         return text
@@ -2134,37 +2124,18 @@ def compact(text):
     headers = {}          # Headers for unfilled sections
     emptySection = False  # empty sections are discarded
     listLevel = []        # nesting of lists
-    lev = 0   
-    isBadSection = 0
-    #gof = open("lala.xml", "w")
-    #gof.write(text)
 
     for line in text.split('\n'):
-    	#page.append(line)
+
         if not line:
             continue
-
-        ######################----------Oksana's corrects----------##########################################
-        rewrite = re.compile(u'%%%переписать.*')
-        delpage = re.compile(u'%%%К удалению.*')
-        cleanpage = re.compile(u'%%%К улучшению.*')
-        badpage = re.compile(u'%%%чистить.*')
-        if rewrite.search(line) or delpage.search(line) or cleanpage.search(line) or badpage.search(line):
-        	if lev == 0:
-        		break
-        	else:
-        		isBadSection = lev
-        	continue
-
-      	#####################################################################################################
-
         # Handle section titles
         m = section.match(line)
         if m:
             title = '' # m.group(2)
             lev = len(m.group(1)) # header level
-            if Extractor.toHTML:
-                page.append("<h%d>%s</h%d>" % (lev, title, lev))
+            #if Extractor.toHTML:
+            #    page.append("<h%d>%s</h%d>" % (lev, title, lev))
             if title and title[-1] not in '!?':
                 title += '.'    # terminate sentence.
             headers[lev] = title
@@ -2174,17 +2145,14 @@ def compact(text):
                     del headers[i]
             emptySection = True
             listLevel = []
-            #isBadSection = lev 
-            if lev == isBadSection:
-            	isBadSection = 0
-            continue	# handle bad sections
+            continue
         # Handle page title
-        elif line.startswith('++'):
-            title = line[2:-2]
-            if title:
-                if title[-1] not in '!?':
-                    title += '.'
-                page.append(title)
+        #elif line.startswith('++'):
+        #    title = line[2:-2]
+        #    if title:
+        #        if title[-1] not in '!?':
+        #            title += '.'
+        #        page.append(title)
         # handle indents
         elif line[0] == ':':
             # page.append(line.lstrip(':*#;'))
@@ -2223,7 +2191,6 @@ def compact(text):
                     # FIXME: use item count for #-lines
                     bullet = '1. ' if n == '#' else '- '
                     page.append('{0:{1}s}'.format(bullet, len(listLevel)) + line)
-        
         elif len(listLevel):
             page.append(line)
             if Extractor.toHTML:
@@ -2232,24 +2199,23 @@ def compact(text):
             listLevel = []
 
         # Drop residuals of lists
-        elif (line[0] in '{|' or line[-1] == '}'): # and line.find('{{переписать'):
+        elif line[0] in '{|' or line[-1] == '}':
             continue
         # Drop irrelevant lines
         elif (line[0] == '(' and line[-1] == ')') or line.strip('.-') == '':
             continue
-        elif len(headers) and not isBadSection: #Oksana's corrects
+        elif len(headers):
             if Extractor.keepSections:
                 items = headers.items()
                 items.sort()
                 for i, v in items:
                     page.append(v)
             headers.clear()
-            if not re.match('^\n$', line):
-            	page.append(line)  # first line
+            page.append(line)  # first line
             emptySection = False
         elif not emptySection:
             # Drop preformatted
-            if line[0] != ' 'and not re.match('^\n$', line):  # dangerous
+            if line[0] != ' ':  # dangerous
                 page.append(line)
 
     return page
