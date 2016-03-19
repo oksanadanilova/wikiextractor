@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # =============================================================================
-#  Version: 2.54 (March 19, 2016)
+#  Version: 2.51 (February 20, 2016)
 #  Author: Giuseppe Attardi (attardi@di.unipi.it), University of Pisa
 #
 #  Contributors:
@@ -42,7 +42,7 @@ Each file will contain several documents in the format:
         ...
         </doc>
 
-Template expansion requires preprocesssng first the whole dump and
+This version performs template expansion by preprocesssng the whole dump and
 collecting template definitions.
 """
 
@@ -66,7 +66,7 @@ from timeit import default_timer
 # ===========================================================================
 
 # Program version
-version = '2.54'
+version = '2.51'
 
 ## PARAMS ####################################################################
 
@@ -403,7 +403,7 @@ class Extractor(object):
     keepLinks = False
 
     ##
-    # Whether to preserve section titles
+    # Whether to preserve section titles (unused)
     keepSections = True
 
     ##
@@ -500,8 +500,9 @@ class Extractor(object):
         res = ''
         cur = 0
         for m in syntaxhighlight.finditer(text):
+            end = m.end()
             res += unescape(text[cur:m.start()]) + m.group(1)
-            cur = m.end()
+            cur = end
         text = res + unescape(text[cur:])
 
         # Handle bold/italic/quote
@@ -567,6 +568,8 @@ class Extractor(object):
         text = re.sub(u'(\[\(«) ', r'\1', text)
         text = re.sub(r'\n\W+?\n', '\n', text, flags=re.U)  # lines with only punctuations
         text = text.replace(',,', ',').replace(',.', '.')
+        text = re.sub('(\s)\([^\(\)]*\)', '', text)
+
         if escape_doc:
             text = cgi.escape(text)
         return text
@@ -1029,7 +1032,7 @@ def findMatchingBraces(text, ldelim=0):
                 cur = end
 
 
-def findBalanced(text, openDelim=['[['], closeDelim=[']]']):
+def findBalanced(text, openDelim, closeDelim):
     """
     Assuming that text contains a properly balanced expression using
     :param openDelim: as opening delimiters and
@@ -1707,7 +1710,7 @@ def replaceInternalLinks(text):
     # triple closing ]]].
     cur = 0
     res = ''
-    for s, e in findBalanced(text):
+    for s, e in findBalanced(text, ('[['), (']]')):
         m = tailRE.match(text, e)
         if m:
             trail = m.group(0)
@@ -1725,7 +1728,7 @@ def replaceInternalLinks(text):
             title = inner[:pipe].rstrip()
             # find last |
             curp = pipe + 1
-            for s1, e1 in findBalanced(inner):
+            for s1, e1 in findBalanced(inner, ('[['), (']]')):
                 last = inner.rfind('|', curp, s1)
                 if last >= 0:
                     pipe = last  # advance
@@ -2035,14 +2038,9 @@ wgUrlProtocols = [
 # \p{Zs} is unicode 'separator, space' category. It covers the space 0x20
 # as well as U+3000 is IDEOGRAPHIC SPACE for bug 19052
 EXT_LINK_URL_CLASS = r'[^][<>"\x00-\x20\x7F\s]'
-ANCHOR_CLASS = r'[^][\x00-\x08\x0a-\x1F]'
 ExtLinkBracketedRegex = re.compile(
-    '\[(((?i)' + '|'.join(wgUrlProtocols) + ')' + EXT_LINK_URL_CLASS + r'+)' +
-    r'\s*((?:' + ANCHOR_CLASS + r'|\[\[' + ANCHOR_CLASS + r'+\]\])' + r'*?)\]',
+    '\[(((?i)' + '|'.join(wgUrlProtocols) + ')' + EXT_LINK_URL_CLASS + r'+)\s*([^\]\x00-\x08\x0a-\x1F]*?)\]',
     re.S | re.U)
-# A simpler alternative:
-# ExtLinkBracketedRegex = re.compile(r'\[(.*?)\](?!])')
-
 EXT_IMAGE_REGEX = re.compile(
     r"""^(http://|https://)([^][<>"\x00-\x20\x7F\s]+)
     /([A-Za-z0-9_.,~%\-+&;#*?!=()@\x80-\xFF]+)\.((?i)gif|png|jpg|jpeg)$""",
@@ -2134,10 +2132,10 @@ def compact(text):
         # Handle section titles
         m = section.match(line)
         if m:
-            title = m.group(2)
+            title = '' # m.group(2)
             lev = len(m.group(1)) # header level
-            if Extractor.toHTML:
-                page.append("<h%d>%s</h%d>" % (lev, title, lev))
+            #if Extractor.toHTML:
+            #    page.append("<h%d>%s</h%d>" % (lev, title, lev))
             if title and title[-1] not in '!?':
                 title += '.'    # terminate sentence.
             headers[lev] = title
@@ -2149,12 +2147,12 @@ def compact(text):
             listLevel = []
             continue
         # Handle page title
-        elif line.startswith('++'):
-            title = line[2:-2]
-            if title:
-                if title[-1] not in '!?':
-                    title += '.'
-                page.append(title)
+        #elif line.startswith('++'):
+        #    title = line[2:-2]
+        #    if title:
+        #        if title[-1] not in '!?':
+        #            title += '.'
+        #        page.append(title)
         # handle indents
         elif line[0] == ':':
             # page.append(line.lstrip(':*#;'))
@@ -2453,20 +2451,19 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     if Extractor.expand_templates:
         # preprocess
         template_load_start = default_timer()
-        if template_file:
-            if os.path.exists(template_file):
-                logging.info("Preprocessing '%s' to collect template definitions: this may take some time.", template_file)
-                file = fileinput.FileInput(template_file, openhook=fileinput.hook_compressed)
-                load_templates(file)
-                file.close()
-            else:
-                if input_file == '-':
-                    # can't scan then reset stdin; must error w/ suggestion to specify template_file
-                    raise ValueError("to use templates with stdin dump, must supply explicit template-file")
-                logging.info("Preprocessing '%s' to collect template definitions: this may take some time.", input_file)
-                load_templates(input, template_file)
-                input.close()
-                input = fileinput.FileInput(input_file, openhook=fileinput.hook_compressed)
+        if template_file and os.path.exists(template_file):
+            logging.info("Preprocessing '%s' to collect template definitions: this may take some time.", template_file)
+            file = fileinput.FileInput(template_file, openhook=fileinput.hook_compressed)
+            load_templates(file)
+            file.close()
+        else:
+            if input_file == '-':
+                # can't scan then reset stdin; must error w/ suggestion to specify template_file
+                raise ValueError("to use templates with stdin dump, must supply explicit template-file")
+            logging.info("Preprocessing '%s' to collect template definitions: this may take some time.", input_file)
+            load_templates(input, template_file)
+            input.close()
+            input = fileinput.FileInput(input_file, openhook=fileinput.hook_compressed)
         template_load_elapsed = default_timer() - template_load_start
         logging.info("Loaded %d templates in %.1fs", len(templates), template_load_elapsed)
 
@@ -2518,7 +2515,6 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             # slow down
             delay = 0
             if spool_length.value > max_spool_length:
-                # reduce to 10%
                 while spool_length.value > max_spool_length/10:
                     time.sleep(10)
                     delay += 10
@@ -2662,8 +2658,6 @@ def main():
                         help="produce HTML output, subsumes --links")
     groupP.add_argument("-l", "--links", action="store_true",
                         help="preserve links")
-    groupP.add_argument("-s", "--sections", action="store_true",
-                        help="preserve sections")
     groupP.add_argument("--lists", action="store_true",
                         help="preserve lists")
     groupP.add_argument("-ns", "--namespaces", default="", metavar="ns1,ns2",
@@ -2692,7 +2686,6 @@ def main():
     args = parser.parse_args()
 
     Extractor.keepLinks = args.links
-    Extractor.keepSections = args.sections
     Extractor.keepLists = args.lists
     Extractor.toHTML = args.html
     if args.html:
